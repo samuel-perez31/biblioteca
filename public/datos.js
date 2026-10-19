@@ -238,6 +238,25 @@
  ]
 };
 
+  // 5 ejemplos de cada sección: se cargan una sola vez, la primera vez que
+  // se abre con esta versión; después se pueden editar o borrar sin volver.
+  const EJEMPLOS = {
+    profesores: [
+      { nombre: 'María Elena', apellido: 'Sosa' },
+      { nombre: 'Carlos', apellido: 'Fernández' },
+      { nombre: 'Adriana', apellido: 'Gómez' },
+      { nombre: 'Jorge', apellido: 'Ramírez' },
+      { nombre: 'Lucía', apellido: 'Martínez' }
+    ],
+    inventario: [
+      { autores: 'Antoine de Saint-Exupéry', titulo: 'El principito', lugar_edicion: 'Buenos Aires', editorial: 'Sudamericana', anio_edicion: '1973', numero_inventario: 'INV-0001', fecha_ingreso: '2026-03-10', cantidad: 20 },
+      { autores: 'Jorge Luis Borges', titulo: 'Ficciones', lugar_edicion: 'Buenos Aires', editorial: 'Emecé', anio_edicion: '1944', numero_inventario: 'INV-0002', fecha_ingreso: '2026-03-12', cantidad: 20 },
+      { autores: 'Julio Cortázar', titulo: 'Rayuela', lugar_edicion: 'Buenos Aires', editorial: 'Alfaguara', anio_edicion: '1963', numero_inventario: 'INV-0003', fecha_ingreso: '2026-04-02', cantidad: 20 },
+      { autores: 'Gabriel García Márquez', titulo: 'Cien años de soledad', lugar_edicion: 'Buenos Aires', editorial: 'Debolsillo', anio_edicion: '1967', numero_inventario: 'INV-0004', fecha_ingreso: '2026-04-15', cantidad: 20 },
+      { autores: 'Ana María Matute', titulo: 'Primera memoria', lugar_edicion: 'Barcelona', editorial: 'Destino', anio_edicion: '1960', numero_inventario: 'INV-0005', fecha_ingreso: '2026-05-06', cantidad: 20 }
+    ]
+  };
+
   let db = null;
 
   function cargar() {
@@ -247,16 +266,24 @@
     if (guardado && Array.isArray(guardado.usuarios) &&
         Array.isArray(guardado.prestamos) && Array.isArray(guardado.detalles)) {
       db = guardado;
-      if (!db.secuencias) db.secuencias = calcularSecuencias(db);
+      // Copias viejas: se agregan las listas de la base de datos si todavía no están
+      if (!Array.isArray(db.profesores)) db.profesores = [];
+      if (!Array.isArray(db.inventario)) db.inventario = [];
+      db.secuencias = Object.assign(calcularSecuencias(db), db.secuencias || {});
     } else {
       db = {
         usuarios: SEMILLA.usuarios.slice(),
         prestamos: SEMILLA.prestamos.slice(),
         detalles: SEMILLA.detalles.slice(),
-        secuencias: calcularSecuencias(SEMILLA)
+        profesores: [],
+        inventario: [],
+        secuencias: null
       };
+      db.secuencias = calcularSecuencias(db);
       guardar();
     }
+    if (normalizarInventario()) guardar();
+    cargarEjemplos();
     return db;
   }
 
@@ -264,7 +291,9 @@
     return {
       usuario: d.usuarios.reduce((m, u) => Math.max(m, u.id_usuario), 0),
       prestamo: d.prestamos.reduce((m, p) => Math.max(m, p.id_prestamo), 0),
-      detalle: d.detalles.reduce((m, x) => Math.max(m, x.id_detalle), 0)
+      detalle: d.detalles.reduce((m, x) => Math.max(m, x.id_detalle), 0),
+      profesor: (d.profesores || []).reduce((m, x) => Math.max(m, x.id_profesor), 0),
+      inventario: (d.inventario || []).reduce((m, x) => Math.max(m, x.id_inventario), 0)
     };
   }
 
@@ -274,6 +303,43 @@
     } catch (e) {
       throw new Error('No se pudo guardar en el navegador, ¿habrá espacio lleno?');
     }
+  }
+
+  // Agrega los 5 ejemplos de cada sección si todavía no están cargados
+  function cargarEjemplos() {
+    if (db.ejemplosCargados) return;
+    db.ejemplosCargados = true;
+    for (const p of EJEMPLOS.profesores) {
+      const existe = db.profesores.some(x =>
+        bajo(x.nombre) === bajo(p.nombre) && bajo(x.apellido) === bajo(p.apellido));
+      if (!existe) {
+        db.profesores.push({
+          id_profesor: ++db.secuencias.profesor,
+          nombre: p.nombre, apellido: p.apellido
+        });
+      }
+    }
+    for (const f of EJEMPLOS.inventario) {
+      const existe = db.inventario.some(x =>
+        bajo(x.numero_inventario) === bajo(f.numero_inventario));
+      if (!existe) {
+        db.inventario.push(Object.assign({ id_inventario: ++db.secuencias.inventario }, f));
+      }
+    }
+    guardar();
+  }
+
+  // Registros viejos del inventario sin cantidad: quedan con 20 por defecto
+  function normalizarInventario() {
+    let cambio = false;
+    for (const f of db.inventario) {
+      const n = Math.trunc(Number(f.cantidad));
+      if (typeof f.cantidad !== 'number' || !Number.isInteger(f.cantidad) || f.cantidad < 0) {
+        f.cantidad = Number.isFinite(n) && n >= 0 ? n : 20;
+        cambio = true;
+      }
+    }
+    return cambio;
   }
 
   // Misma marca de tiempo que usaba el servidor: fecha y hora en UTC
@@ -308,6 +374,35 @@
   function coincide(d, det, prestamo, q) {
     const u = usuarioDe(d, prestamo);
     return bajo(det.material).includes(q) || bajo(u.nombre).includes(q) || bajo(u.curso).includes(q);
+  }
+
+  // Suma, por título, cuántas copias están fuera sin devolver
+  function pendientesMap(d) {
+    const pend = new Map();
+    for (const det of d.detalles) {
+      if (det.devuelto) continue;
+      const k = bajo(det.material).trim();
+      pend.set(k, (pend.get(k) || 0) + (Number(det.cantidad) || 1));
+    }
+    return pend;
+  }
+
+  // Por cada título del catálogo: total agregado, copias sin devolver y disponibles
+  function disponibilidadMap(d) {
+    const disp = new Map();
+    for (const f of d.inventario || []) {
+      const k = bajo(f.titulo).trim();
+      if (!k) continue;
+      const acum = disp.get(k) || { titulo: String(f.titulo || '').trim(), total: 0 };
+      acum.total += Number(f.cantidad) || 0;
+      disp.set(k, acum);
+    }
+    const pend = pendientesMap(d);
+    for (const [k, x] of disp) {
+      x.pendientes = pend.get(k) || 0;
+      x.disponibles = Math.max(0, x.total - x.pendientes);
+    }
+    return disp;
   }
 
   const Datos = {
@@ -383,6 +478,16 @@
         .sort((a, b) => compararDesc(a.regreso, b.regreso) || b.id_detalle - a.id_detalle);
     },
 
+    // Copias que están fuera de cada título: no se pueden volver a prestar
+    pendientes() {
+      return pendientesMap(cargar());
+    },
+
+    // Disponibilidad por título del catálogo: { titulo, total, pendientes, disponibles }
+    disponibilidad() {
+      return disponibilidadMap(cargar());
+    },
+
     // Registra un préstamo con uno o varios materiales (RF-01 y RF-02)
     registrar(pedido) {
       const nombre = String((pedido && pedido.nombre) || '').trim();
@@ -402,6 +507,32 @@
       }
 
       const d = cargar();
+
+      // Solo se puede pedir hasta lo disponible en el catálogo; los títulos que
+      // no están en el catálogo conservan la regla anterior (nada sin devolver)
+      const disp = disponibilidadMap(d);
+      const pend = pendientesMap(d);
+      const pedidos = new Map();
+      for (const m of materiales) {
+        const k = bajo(m.material).trim();
+        const acum = pedidos.get(k) || { titulo: m.material, n: 0 };
+        acum.n += m.cantidad;
+        pedidos.set(k, acum);
+      }
+      const fuera = [];
+      for (const [k, x] of pedidos) {
+        if (disp.has(k)) {
+          const quedan = disp.get(k).disponibles;
+          if (x.n > quedan) fuera.push('"' + x.titulo + '" (quedan ' + quedan + ')');
+        } else {
+          const n = pend.get(k) || 0;
+          if (n > 0) fuera.push('"' + x.titulo + '" (' + n + ' sin devolver)');
+        }
+      }
+      if (fuera.length) {
+        throw new Error('No se puede pedir: ' + fuera.join(', '));
+      }
+
       // Reutiliza al usuario si ya existe con el mismo nombre y curso
       let u = d.usuarios.find(x => x.nombre === nombre && x.curso === curso);
       if (!u) {
@@ -444,6 +575,114 @@
       return { ok: true };
     },
 
+    // ── Base de datos: profesores (nombre y apellido) ──
+    profesores: {
+      // Lista con búsqueda por nombre o apellido, ordenada por apellido
+      listar(busqueda) {
+        const d = cargar().profesores;
+        const q = bajo(busqueda).trim();
+        return d
+          .filter(p => !q || bajo(p.nombre).includes(q) || bajo(p.apellido).includes(q))
+          .sort((a, b) => (a.apellido + ' ' + a.nombre).localeCompare(b.apellido + ' ' + b.nombre, 'es'));
+      },
+
+      // Crea un profesor nuevo o actualiza uno existente (id_profesor > 0)
+      guardar(registro) {
+        const nombre = String((registro && registro.nombre) || '').trim();
+        const apellido = String((registro && registro.apellido) || '').trim();
+        if (!nombre || !apellido) throw new Error('Faltan nombre o apellido');
+
+        const d = cargar();
+        const id = Number((registro && registro.id_profesor) || 0);
+        if (id) {
+          const p = d.profesores.find(x => x.id_profesor === id);
+          if (!p) throw new Error('Ese profesor ya no existe');
+          p.nombre = nombre;
+          p.apellido = apellido;
+        } else {
+          d.profesores.push({ id_profesor: ++d.secuencias.profesor, nombre, apellido });
+        }
+        guardar();
+        return { ok: true };
+      },
+
+      eliminar(idProfesor) {
+        const d = cargar();
+        const i = d.profesores.findIndex(x => x.id_profesor === Number(idProfesor));
+        if (i < 0) throw new Error('Ese profesor ya no existe');
+        d.profesores.splice(i, 1);
+        guardar();
+        return { ok: true };
+      }
+    },
+
+    // ── Base de datos: inventario de materiales ──
+    inventario: {
+      // Lista con búsqueda por título, autor, editorial, lugar o número
+      listar(busqueda) {
+        const d = cargar().inventario;
+        const q = bajo(busqueda).trim();
+        return d
+          .filter(x => !q || [x.titulo, x.autores, x.editorial, x.lugar_edicion, x.numero_inventario]
+            .some(v => bajo(v).includes(q)))
+          .sort((a, b) => String(a.titulo).localeCompare(String(b.titulo), 'es'));
+      },
+
+      // Crea un registro nuevo o actualiza uno existente (id_inventario > 0)
+      guardar(registro) {
+        const texto = k => String((registro && registro[k]) || '').trim();
+        const autores = texto('autores');
+        const titulo = texto('titulo');
+        const lugar = texto('lugar_edicion');
+        const editorial = texto('editorial');
+        const anio = texto('anio_edicion');
+        const numero = texto('numero_inventario');
+        const ingreso = texto('fecha_ingreso') || ahoraUTC().slice(0, 10);
+        const cantBruta = String((registro && registro.cantidad !== undefined &&
+          registro.cantidad !== null) ? registro.cantidad : '').trim();
+        const cantidad = cantBruta === '' ? 1 : Number(cantBruta);
+
+        if (!titulo) throw new Error('Falta el título');
+        if (!numero) throw new Error('Falta el número de inventario');
+        if (anio && !/^\d{1,4}$/.test(anio)) throw new Error('El año de edición no es válido');
+        if (!/^\d+$/.test(cantBruta === '' ? '1' : cantBruta) || !Number.isInteger(cantidad)) {
+          throw new Error('La cantidad debe ser un número entero igual o mayor a 0');
+        }
+
+        const d = cargar();
+        const id = Number((registro && registro.id_inventario) || 0);
+        const repetido = d.inventario.some(x => x.id_inventario !== id &&
+          String(x.numero_inventario).toLowerCase() === numero.toLowerCase());
+        if (repetido) throw new Error('Ya existe otro material con ese número de inventario');
+
+        if (id) {
+          const f = d.inventario.find(x => x.id_inventario === id);
+          if (!f) throw new Error('Ese material ya no existe');
+          Object.assign(f, {
+            autores, titulo, lugar_edicion: lugar, editorial,
+            anio_edicion: anio, numero_inventario: numero, fecha_ingreso: ingreso, cantidad
+          });
+        } else {
+          d.inventario.push({
+            id_inventario: ++d.secuencias.inventario,
+            autores, titulo, lugar_edicion: lugar, editorial,
+            anio_edicion: anio, numero_inventario: numero, fecha_ingreso: ingreso, cantidad
+          });
+        }
+        guardar();
+        return { ok: true };
+      },
+
+      eliminar(idInventario) {
+        const d = cargar();
+        const i = d.inventario.findIndex(x => x.id_inventario === Number(idInventario));
+        if (i < 0) throw new Error('Ese material ya no existe');
+        d.inventario.splice(i, 1);
+        guardar();
+        return { ok: true };
+      }
+    },
+
     // Copia de seguridad: descarga todos los datos como archivo .json
     exportar() {
       const d = cargar();
@@ -470,8 +709,12 @@
         usuarios: d.usuarios,
         prestamos: d.prestamos,
         detalles: d.detalles,
-        secuencias: d.secuencias || calcularSecuencias(d)
+        profesores: Array.isArray(d.profesores) ? d.profesores : [],
+        inventario: Array.isArray(d.inventario) ? d.inventario : [],
+        secuencias: d.secuencias || {}
       };
+      db.secuencias = Object.assign(calcularSecuencias(db), db.secuencias);
+      normalizarInventario();
       guardar();
       return true;
     }

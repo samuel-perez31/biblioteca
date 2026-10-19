@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f4d2e">
+  <title>Profesores · Biblioteca escolar</title>
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <aside class="menu" id="menu"></aside>
+  <script src="menu.js"></script>
+  <script src="datos.js"></script>
+
+  <main>
+    <div class="encabezado">
+      <div>
+        <h1>Profesores</h1>
+        <p class="sub">Carga, corrige o quita los datos de los profesores de la escuela.</p>
+      </div>
+      <button type="button" class="btn-verde" id="nuevo">+ Nuevo profesor</button>
+    </div>
+
+    <section class="tarjeta" id="formulario" hidden>
+      <h2 id="form-titulo">Nuevo profesor</h2>
+      <div id="aviso" class="aviso" role="alert"></div>
+
+      <div class="campos">
+        <div>
+          <label for="nombre">Nombre</label>
+          <input id="nombre" placeholder="Ej. Martina" autocomplete="off">
+        </div>
+        <div>
+          <label for="apellido">Apellido</label>
+          <input id="apellido" placeholder="Ej. López" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="acciones">
+        <button type="button" class="btn-borde" id="cancelar">Cancelar</button>
+        <button type="button" class="btn-verde" id="guardar">Guardar profesor</button>
+      </div>
+    </section>
+
+    <div class="barra">
+      <input id="buscar" type="text" placeholder="Buscar por nombre o apellido" aria-label="Buscar" autocomplete="off">
+      <span id="total" class="total"></span>
+    </div>
+
+    <div id="lista" aria-live="polite"></div>
+  </main>
+
+  <script>
+    const lista = document.getElementById('lista');
+    const buscar = document.getElementById('buscar');
+    const total = document.getElementById('total');
+    const formulario = document.getElementById('formulario');
+    const aviso = document.getElementById('aviso');
+    const nombre = document.getElementById('nombre');
+    const apellido = document.getElementById('apellido');
+    let editando = 0;
+
+    function el(tag, clase, texto) {
+      const e = document.createElement(tag);
+      if (clase) e.className = clase;
+      if (texto !== undefined) e.textContent = texto;
+      return e;
+    }
+
+    function mostrar(tipo, texto) {
+      aviso.className = 'aviso ' + tipo;
+      aviso.textContent = texto;
+    }
+
+    function celda(etiqueta, valor) {
+      const td = el('td', '', valor);
+      td.dataset.label = etiqueta;
+      return td;
+    }
+
+    function mensaje(titulo, detalle, textoBoton, accion) {
+      lista.replaceChildren();
+      const caja = el('div', 'vacio');
+      caja.append(el('strong', '', titulo), detalle);
+      if (textoBoton) {
+        const b = el('button', 'btn-borde', textoBoton);
+        b.type = 'button';
+        b.onclick = accion;
+        caja.append(document.createElement('br'), b);
+      }
+      lista.append(caja);
+    }
+
+    function abrirForm(id) {
+      editando = Number(id) || 0;
+      aviso.className = 'aviso';
+      aviso.textContent = '';
+      if (editando) {
+        const p = Datos.profesores.listar('').find(x => x.id_profesor === editando);
+        if (!p) { editando = 0; return; }
+        document.getElementById('form-titulo').textContent = 'Editar profesor';
+        nombre.value = p.nombre;
+        apellido.value = p.apellido;
+      } else {
+        document.getElementById('form-titulo').textContent = 'Nuevo profesor';
+        nombre.value = '';
+        apellido.value = '';
+      }
+      formulario.hidden = false;
+      formulario.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      nombre.focus();
+    }
+
+    function cerrarForm() {
+      formulario.hidden = true;
+    }
+
+    function cargar() {
+      const q = buscar.value.trim();
+      total.textContent = '';
+      try {
+        dibujar(Datos.profesores.listar(q), q);
+      } catch {
+        mensaje('No se pudo cargar la lista',
+          'Vuelve a intentarlo.',
+          'Reintentar', cargar);
+      }
+    }
+
+    function dibujar(filas, q) {
+      total.textContent = filas.length + (filas.length === 1 ? ' profesor' : ' profesores');
+      if (filas.length === 0) {
+        return q
+          ? mensaje('Sin resultados', 'No hay profesores que coincidan con "' + q + '".')
+          : mensaje('Todavía no hay profesores', 'Cuando registres uno aparecerá aquí.');
+      }
+
+      const tabla = el('table', 'datos');
+      const encabezado = el('thead');
+      const cab = el('tr');
+      for (const t of ['Nombre', 'Apellido', 'Acciones']) cab.append(el('th', '', t));
+      encabezado.append(cab);
+      tabla.append(encabezado);
+
+      const cuerpo = el('tbody');
+      for (const p of filas) {
+        const fila = el('tr');
+        fila.append(celda('Nombre', p.nombre), celda('Apellido', p.apellido));
+
+        const acciones = el('td');
+        acciones.dataset.label = 'Acciones';
+        const caja = el('div', 'acciones-fila');
+        const editar = el('button', 'btn-editar', 'Editar');
+        editar.type = 'button';
+        editar.onclick = () => abrirForm(p.id_profesor);
+        const eliminar = el('button', 'btn-eliminar', 'Eliminar');
+        eliminar.type = 'button';
+        eliminar.onclick = () => quitar(p);
+        caja.append(editar, eliminar);
+        acciones.append(caja);
+        fila.append(acciones);
+
+        cuerpo.append(fila);
+      }
+      tabla.append(cuerpo);
+
+      const caja = el('div', 'tabla-caja');
+      caja.append(tabla);
+      lista.replaceChildren(caja);
+    }
+
+    function quitar(p) {
+      if (!confirm('¿Eliminar a ' + p.nombre + ' ' + p.apellido + '?')) return;
+      try {
+        Datos.profesores.eliminar(p.id_profesor);
+        if (editando === p.id_profesor) cerrarForm();
+        cargar();
+      } catch (e) {
+        alert('No se pudo eliminar: ' + e.message);
+      }
+    }
+
+    document.getElementById('nuevo').onclick = () => abrirForm(0);
+    document.getElementById('cancelar').onclick = cerrarForm;
+
+    document.getElementById('guardar').onclick = () => {
+      try {
+        Datos.profesores.guardar({
+          id_profesor: editando,
+          nombre: nombre.value,
+          apellido: apellido.value
+        });
+        cerrarForm();
+        cargar();
+      } catch (e) {
+        mostrar('error', 'No se pudo guardar: ' + e.message + '. Revisa los datos e inténtalo de nuevo.');
+      }
+    };
+
+    formulario.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('guardar').click();
+      if (e.key === 'Escape') cerrarForm();
+    });
+
+    let espera;
+    buscar.addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(cargar, 250); });
+    cargar();
+  </script>
+</body>
+</html>

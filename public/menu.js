@@ -8,11 +8,32 @@
     ['activos.html', 'Préstamos activos'],
     ['historial.html', 'Historial']
   ];
+  const seccionBase = [
+    ['profesores.html', 'Profesores'],
+    ['inventario.html', 'Inventario']
+  ];
   const actual = location.pathname.split('/').pop() || 'index.html';
 
   const enlaces = paginas.map(function (p) {
     return '<a href="' + p[0] + '"' + (p[0] === actual ? ' class="activo"' : '') + '>' + p[1] + '</a>';
   }).join('');
+
+  // Botón "Base de datos": al abrirlo muestra Profesores e Inventario debajo
+  const dentroBase = seccionBase.some(function (p) { return p[0] === actual; });
+  const enlacesBase = seccionBase.map(function (p) {
+    return '<a href="' + p[0] + '"' + (p[0] === actual ? ' class="activo"' : '') + '>' + p[1] + '</a>';
+  }).join('');
+  const grupoBase =
+    '<div class="grupo-base">' +
+      '<button type="button" class="btn-base" aria-expanded="' + (dentroBase ? 'true' : 'false') +
+        '" aria-controls="submenu-base">' +
+        '<span>Base de datos</span>' +
+        '<svg class="flecha" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+          'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+          '<path d="M9 6l6 6-6 6"/></svg>' +
+      '</button>' +
+      '<div class="submenu' + (dentroBase ? ' visible' : '') + '" id="submenu-base">' + enlacesBase + '</div>' +
+    '</div>';
 
   const menu = document.getElementById('menu');
   menu.innerHTML =
@@ -21,7 +42,7 @@
         'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>' +
     '</button>' +
     '<div class="marca">Biblioteca escolar<small>Control de préstamos</small></div>' +
-    '<nav>' + enlaces + '</nav>' +
+    '<nav>' + enlaces + grupoBase + '</nav>' +
     '<div class="plazos">' +
       '<strong>Estados automáticos</strong>' +
       'En préstamo: hace menos de 1 día.<br>' +
@@ -74,6 +95,15 @@
   menu.querySelector('.cerrar-menu').addEventListener('click', cerrarMenu);
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') cerrarMenu();
+  });
+
+  // El botón "Base de datos" abre y cierra sus dos opciones
+  const btnBase = menu.querySelector('.btn-base');
+  const submenuBase = menu.querySelector('#submenu-base');
+  btnBase.addEventListener('click', function () {
+    const abierto = btnBase.getAttribute('aria-expanded') === 'true';
+    btnBase.setAttribute('aria-expanded', String(!abierto));
+    submenuBase.classList.toggle('visible', !abierto);
   });
   // Cerrar también después de elegir una opción
   menu.addEventListener('click', function (e) {

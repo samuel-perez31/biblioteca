@@ -42,6 +42,24 @@ img, video { max-width: 100%; height: auto; }
 }
 .menu a:hover { background: rgba(255,255,255,.12); opacity: 1; }
 .menu a.activo { background: var(--blanco); color: var(--verde); font-weight: 600; opacity: 1; }
+
+/* Sección "Base de datos" del menú: un botón que despliega dos opciones */
+.grupo-base { display: flex; flex-direction: column; gap: 4px; }
+.btn-base {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  width: 100%; padding: 12px; border: 0; border-radius: 8px; text-align: left;
+  background: transparent; color: var(--blanco); font: inherit; opacity: .88;
+}
+.btn-base:hover { background: rgba(255,255,255,.12); opacity: 1; }
+.btn-base .flecha { flex-shrink: 0; transition: transform .2s ease; }
+.btn-base[aria-expanded="true"] { opacity: 1; }
+.btn-base[aria-expanded="true"] .flecha { transform: rotate(90deg); }
+.submenu {
+  display: none; flex-direction: column; gap: 4px;
+  margin-left: 14px; padding-left: 10px; border-left: 2px solid rgba(255,255,255,.35);
+}
+.submenu.visible { display: flex; }
+.submenu a { padding: 10px 12px; }
 .plazos {
   margin-top: auto; padding: 14px; border-radius: 10px; font-size: .85rem; line-height: 1.5;
   background: rgba(0,0,0,.2);
@@ -67,6 +85,26 @@ h1 { font-family: var(--titulos); font-size: 2.2rem; margin: 0 0 6px; color: var
 }
 .nota { background: var(--verde-claro); border-radius: 12px; padding: 20px; line-height: 1.5; }
 .nota h2 { font-family: var(--titulos); margin: 0 0 8px; font-size: 1.2rem; color: var(--verde); }
+.tarjeta h2 { font-family: var(--titulos); margin: 0 0 18px; font-size: 1.25rem; color: var(--verde); }
+
+/* Formulario de la base de datos: campos en dos columnas */
+.campos { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+.campos .ancho { grid-column: 1 / -1; }
+
+/* Autocompletado: sugiere de la base de datos mientras se escribe */
+.sug-caja { position: relative; }
+.sugerencias {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 40;
+  margin: 0; padding: 6px; list-style: none;
+  background: var(--blanco); border: 1px solid var(--borde); border-radius: 10px;
+  box-shadow: 0 10px 26px rgba(15, 77, 46, .18);
+  max-height: 260px; overflow-y: auto;
+}
+.sugerencias[hidden] { display: none; }
+.sugerencias li { padding: 10px 12px; border-radius: 7px; cursor: pointer; font-size: .95rem; }
+.sugerencias li:hover, .sugerencias li.activo { background: var(--verde-claro); color: var(--verde); font-weight: 600; }
+.sug-estado { color: var(--rojo); font-weight: 600; font-size: .8rem; margin-left: 6px; }
+.sug-estado.quedan { color: var(--verde-medio); }
 
 /* Formularios */
 .fila { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 20px; }
@@ -81,6 +119,7 @@ input:focus-visible, button:focus-visible, a:focus-visible {
 .libro { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto 40px; gap: 10px; margin-bottom: 10px; align-items: stretch; }
 .libro .num { grid-area: 1 / 1; }
 .libro .titulo { grid-area: 1 / 2; }
+.libro .sug-caja { grid-area: 1 / 2; }
 .libro .cant-fila { grid-area: 1 / 3; }
 .libro .btn-quitar { grid-area: 1 / 4; }
 .num {
@@ -96,7 +135,15 @@ button { font: inherit; cursor: pointer; border-radius: 8px; }
 .btn-verde:disabled { background: #9fb3a6; cursor: not-allowed; }
 .btn-borde { background: transparent; border: 1px dashed var(--verde-medio); color: var(--verde); padding: 10px 16px; }
 .btn-quitar { background: transparent; border: 0; color: var(--rojo); font-size: 1.3rem; }
-.acciones { display: flex; justify-content: flex-end; border-top: 1px solid var(--borde); margin-top: 24px; padding-top: 20px; }
+.acciones { display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--borde); margin-top: 24px; padding-top: 20px; }
+
+/* Filas de la base de datos: editar y eliminar */
+.btn-editar, .btn-eliminar { background: var(--blanco); padding: 8px 14px; font-weight: 600; }
+.btn-editar { border: 1px solid var(--verde-medio); color: var(--verde); }
+.btn-editar:hover { background: var(--verde-claro); }
+.btn-eliminar { border: 1px solid var(--rojo); color: var(--rojo); }
+.btn-eliminar:hover { background: var(--rojo-claro); }
+.acciones-fila { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
 /* Cantidad: selector con botones − y + */
 .cant-fila { display: flex; align-items: stretch; }
@@ -156,12 +203,16 @@ a.btn-verde { display: inline-block; text-decoration: none; }
 
 /* Historial */
 .tabla-caja { background: var(--blanco); border: 1px solid var(--borde); border-radius: 16px; overflow-x: auto; }
-table.historial { width: 100%; border-collapse: collapse; min-width: 680px; }
-table.historial th {
+table.historial, table.datos { width: 100%; border-collapse: collapse; min-width: 680px; }
+/* La tabla del inventario tiene más columnas y necesita más ancho */
+table.datos.largo { min-width: 1200px; }
+table.datos th:last-child, table.datos td:last-child { text-align: right; }
+table.datos td.cantidad-cero { color: var(--rojo); font-weight: 700; }
+table.historial th, table.datos th {
   text-align: left; padding: 14px 24px; background: var(--verde-claro); color: var(--verde);
   font-size: .72rem; letter-spacing: .08em; text-transform: uppercase;
 }
-table.historial td { padding: 16px 24px; border-top: 1px solid var(--borde); vertical-align: middle; font-size: .92rem; }
+table.historial td, table.datos td { padding: 16px 24px; border-top: 1px solid var(--borde); vertical-align: middle; font-size: .92rem; }
 .item { display: flex; align-items: center; gap: 14px; }
 .item > div { min-width: 0; }
 .titulo-mat { overflow-wrap: break-word; }
@@ -270,7 +321,7 @@ table.historial td { padding: 16px 24px; border-top: 1px solid var(--borde); ver
   .sub { margin-bottom: 20px; }
 
   /* Formularios en una sola columna */
-  .layout, .fila { grid-template-columns: 1fr; }
+  .layout, .fila, .campos { grid-template-columns: 1fr; }
   .fila { gap: 14px; margin-bottom: 18px; }
   .tarjeta { padding: 20px 16px; }
   .nota { padding: 16px; }
@@ -293,7 +344,7 @@ table.historial td { padding: 16px 24px; border-top: 1px solid var(--borde); ver
   .cant-caja input { width: 56px; padding: 0 4px; }
 
   /* Botones grandes para tocar con el dedo */
-  .btn-verde, .btn-borde, .btn-devolver { min-height: 44px; }
+  .btn-verde, .btn-borde, .btn-devolver, .btn-editar, .btn-eliminar { min-height: 44px; }
   .btn-quitar { min-width: 44px; min-height: 44px; }
   .tarjeta .btn-borde { width: 100%; }
   .acciones .btn-verde { width: 100%; min-height: 48px; }
@@ -312,23 +363,24 @@ table.historial td { padding: 16px 24px; border-top: 1px solid var(--borde); ver
 
   /* Historial: la tabla se convierte en tarjetas apiladas */
   .tabla-caja { overflow-x: visible; background: transparent; border: 0; border-radius: 0; }
-  table.historial { min-width: 0; }
-  table.historial thead { display: none; }
-  table.historial, table.historial tbody { display: block; }
-  table.historial tr {
+  table.historial, table.datos { min-width: 0; }
+  table.datos.largo { min-width: 0; }
+  table.historial thead, table.datos thead { display: none; }
+  table.historial, table.historial tbody, table.datos, table.datos tbody { display: block; }
+  table.historial tr, table.datos tr {
     display: block; background: var(--blanco); border: 1px solid var(--borde);
     border-radius: 12px; margin-bottom: 12px; overflow: hidden;
   }
-  table.historial td {
+  table.historial td, table.datos td {
     display: flex; flex-wrap: wrap; gap: 2px 12px; justify-content: space-between;
     padding: 10px 14px; border-top: 1px solid var(--borde); text-align: right; font-size: .92rem;
   }
-  table.historial td::before {
+  table.historial td::before, table.datos td::before {
     content: attr(data-label); text-align: left; color: var(--verde);
     font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
   }
-  table.historial td:first-child { display: block; border-top: 0; padding: 14px 14px 10px; text-align: left; }
-  table.historial td:first-child::before { display: none; }
+  table.historial td:first-child, table.datos td:first-child { display: block; border-top: 0; padding: 14px 14px 10px; text-align: left; }
+  table.historial td:first-child::before, table.datos td:first-child::before { display: none; }
 
   /* Resumen, avisos y banner */
   .vacio { padding: 32px 16px; }

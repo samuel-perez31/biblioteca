@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f4d2e">
+  <title>Inventario · Biblioteca escolar</title>
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <aside class="menu" id="menu"></aside>
+  <script src="menu.js"></script>
+  <script src="datos.js"></script>
+
+  <main>
+    <div class="encabezado">
+      <div>
+        <h1>Inventario</h1>
+        <p class="sub">El catálogo de la biblioteca: cargá, corregí o quitá cada material.</p>
+      </div>
+      <button type="button" class="btn-verde" id="nuevo">+ Nuevo material</button>
+    </div>
+
+    <section class="tarjeta" id="formulario" hidden>
+      <h2 id="form-titulo">Nuevo material</h2>
+      <div id="aviso" class="aviso" role="alert"></div>
+
+      <div class="campos">
+        <div class="ancho">
+          <label for="autores">Nombre de autor/es</label>
+          <input id="autores" placeholder="Ej. Julio Cortázar, Ana María Matute" autocomplete="off">
+        </div>
+        <div class="ancho">
+          <label for="titulo">Título</label>
+          <input id="titulo" placeholder="Ej. Rayuela" autocomplete="off">
+        </div>
+        <div>
+          <label for="lugar">Lugar de edición</label>
+          <input id="lugar" placeholder="Ej. Buenos Aires" autocomplete="off">
+        </div>
+        <div>
+          <label for="editorial">Editorial</label>
+          <input id="editorial" placeholder="Ej. Sudamericana" autocomplete="off">
+        </div>
+        <div>
+          <label for="anio">Año de edición</label>
+          <input id="anio" type="number" min="0" max="2100" placeholder="Ej. 1963" inputmode="numeric">
+        </div>
+        <div>
+          <label for="numero">Número de inventario</label>
+          <input id="numero" placeholder="Ej. INV-0006" autocomplete="off">
+        </div>
+        <div>
+          <label for="cantidad">Cantidad</label>
+          <input id="cantidad" type="number" min="0" step="1" placeholder="Ej. 20" inputmode="numeric">
+        </div>
+        <div>
+          <label for="ingreso">Fecha de ingreso</label>
+          <input id="ingreso" type="date">
+        </div>
+      </div>
+
+      <div class="acciones">
+        <button type="button" class="btn-borde" id="cancelar">Cancelar</button>
+        <button type="button" class="btn-verde" id="guardar">Guardar material</button>
+      </div>
+    </section>
+
+    <div class="barra">
+      <input id="buscar" type="text" placeholder="Buscar por título, autor o número" aria-label="Buscar" autocomplete="off">
+      <span id="total" class="total"></span>
+    </div>
+
+    <div id="lista" aria-live="polite"></div>
+  </main>
+
+  <script>
+    const lista = document.getElementById('lista');
+    const buscar = document.getElementById('buscar');
+    const total = document.getElementById('total');
+    const formulario = document.getElementById('formulario');
+    const aviso = document.getElementById('aviso');
+    const campos = {
+      autores: document.getElementById('autores'),
+      titulo: document.getElementById('titulo'),
+      lugar: document.getElementById('lugar'),
+      editorial: document.getElementById('editorial'),
+      anio: document.getElementById('anio'),
+      numero: document.getElementById('numero'),
+      cantidad: document.getElementById('cantidad'),
+      ingreso: document.getElementById('ingreso')
+    };
+    let editando = 0;
+
+    function el(tag, clase, texto) {
+      const e = document.createElement(tag);
+      if (clase) e.className = clase;
+      if (texto !== undefined) e.textContent = texto;
+      return e;
+    }
+
+    function mostrar(tipo, texto) {
+      aviso.className = 'aviso ' + tipo;
+      aviso.textContent = texto;
+    }
+
+    // Celda con etiqueta: en celular se muestra como tarjeta con el nombre del campo
+    function celda(etiqueta, valor) {
+      const texto = valor === null || valor === undefined ? '' : String(valor).trim();
+      const td = el('td', '', texto || '—');
+      td.dataset.label = etiqueta;
+      return td;
+    }
+
+    // La fecha se guarda como 2026-10-19 y se muestra como 19/10/2026
+    function fechaCorta(s) {
+      const p = String(s || '').slice(0, 10).split('-');
+      return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : (s || '—');
+    }
+
+    function mensaje(titulo, detalle, textoBoton, accion) {
+      lista.replaceChildren();
+      const caja = el('div', 'vacio');
+      caja.append(el('strong', '', titulo), detalle);
+      if (textoBoton) {
+        const b = el('button', 'btn-borde', textoBoton);
+        b.type = 'button';
+        b.onclick = accion;
+        caja.append(document.createElement('br'), b);
+      }
+      lista.append(caja);
+    }
+
+    function abrirForm(id) {
+      editando = Number(id) || 0;
+      aviso.className = 'aviso';
+      aviso.textContent = '';
+      if (editando) {
+        const f = Datos.inventario.listar('').find(x => x.id_inventario === editando);
+        if (!f) { editando = 0; return; }
+        document.getElementById('form-titulo').textContent = 'Editar material';
+        campos.autores.value = f.autores || '';
+        campos.titulo.value = f.titulo || '';
+        campos.lugar.value = f.lugar_edicion || '';
+        campos.editorial.value = f.editorial || '';
+        campos.anio.value = f.anio_edicion || '';
+        campos.numero.value = f.numero_inventario || '';
+        campos.cantidad.value = f.cantidad === null || f.cantidad === undefined ? '' : f.cantidad;
+        campos.ingreso.value = String(f.fecha_ingreso || '').slice(0, 10);
+      } else {
+        document.getElementById('form-titulo').textContent = 'Nuevo material';
+        for (const k in campos) campos[k].value = '';
+        campos.ingreso.value = new Date().toISOString().slice(0, 10);
+      }
+      formulario.hidden = false;
+      formulario.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      campos.autores.focus();
+    }
+
+    function cerrarForm() {
+      formulario.hidden = true;
+    }
+
+    function cargar() {
+      const q = buscar.value.trim();
+      total.textContent = '';
+      try {
+        dibujar(Datos.inventario.listar(q), q);
+      } catch {
+        mensaje('No se pudo cargar el inventario',
+          'Vuelve a intentarlo.',
+          'Reintentar', cargar);
+      }
+    }
+
+    const COLUMNAS = ['Autor/es', 'Título', 'Lugar de edición', 'Editorial', 'Año', 'N° inventario', 'Cantidad', 'Disponibles', 'Ingreso', 'Acciones'];
+
+    function dibujar(filas, q) {
+      total.textContent = filas.length + (filas.length === 1 ? ' material' : ' materiales');
+      if (filas.length === 0) {
+        return q
+          ? mensaje('Sin resultados', 'No hay materiales que coincidan con "' + q + '".')
+          : mensaje('Todavía no hay materiales', 'Cuando registres un libro u otro material aparecerá aquí.');
+      }
+
+      const disp = Datos.disponibilidad();
+      const tabla = el('table', 'datos largo');
+      const encabezado = el('thead');
+      const cab = el('tr');
+      for (const t of COLUMNAS) cab.append(el('th', '', t));
+      encabezado.append(cab);
+      tabla.append(encabezado);
+
+      const cuerpo = el('tbody');
+      for (const f of filas) {
+        const fila = el('tr');
+        const info = disp.get(String(f.titulo || '').toLowerCase().trim());
+        const disponibles = info ? info.disponibles : f.cantidad;
+        const celdaDisp = celda('Disponibles', disponibles);
+        if (Number(disponibles) === 0) celdaDisp.classList.add('cantidad-cero');
+        fila.append(
+          celda('Autor/es', f.autores),
+          celda('Título', f.titulo),
+          celda('Lugar de edición', f.lugar_edicion),
+          celda('Editorial', f.editorial),
+          celda('Año', f.anio_edicion),
+          celda('N° inventario', f.numero_inventario),
+          celda('Cantidad', f.cantidad),
+          celdaDisp,
+          celda('Ingreso', fechaCorta(f.fecha_ingreso))
+        );
+
+        const acciones = el('td');
+        acciones.dataset.label = 'Acciones';
+        const caja = el('div', 'acciones-fila');
+        const editar = el('button', 'btn-editar', 'Editar');
+        editar.type = 'button';
+        editar.onclick = () => abrirForm(f.id_inventario);
+        const eliminar = el('button', 'btn-eliminar', 'Eliminar');
+        eliminar.type = 'button';
+        eliminar.onclick = () => quitar(f);
+        caja.append(editar, eliminar);
+        acciones.append(caja);
+        fila.append(acciones);
+
+        cuerpo.append(fila);
+      }
+      tabla.append(cuerpo);
+
+      const caja = el('div', 'tabla-caja');
+      caja.append(tabla);
+      lista.replaceChildren(caja);
+    }
+
+    function quitar(f) {
+      const detalle = f.titulo + (f.numero_inventario ? ' (' + f.numero_inventario + ')' : '');
+      if (!confirm('¿Eliminar "' + detalle + '" del inventario?')) return;
+      try {
+        Datos.inventario.eliminar(f.id_inventario);
+        if (editando === f.id_inventario) cerrarForm();
+        cargar();
+      } catch (e) {
+        alert('No se pudo eliminar: ' + e.message);
+      }
+    }
+
+    document.getElementById('nuevo').onclick = () => abrirForm(0);
+    document.getElementById('cancelar').onclick = cerrarForm;
+
+    document.getElementById('guardar').onclick = () => {
+      try {
+        Datos.inventario.guardar({
+          id_inventario: editando,
+          autores: campos.autores.value,
+          titulo: campos.titulo.value,
+          lugar_edicion: campos.lugar.value,
+          editorial: campos.editorial.value,
+          anio_edicion: campos.anio.value,
+          numero_inventario: campos.numero.value,
+          cantidad: campos.cantidad.value,
+          fecha_ingreso: campos.ingreso.value
+        });
+        cerrarForm();
+        cargar();
+      } catch (e) {
+        mostrar('error', 'No se pudo guardar: ' + e.message + '. Revisa los datos e inténtalo de nuevo.');
+      }
+    };
+
+    formulario.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('guardar').click();
+      if (e.key === 'Escape') cerrarForm();
+    });
+
+    let espera;
+    buscar.addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(cargar, 250); });
+    cargar();
+  </script>
+</body>
+</html>

@@ -23,7 +23,10 @@
         <div class="fila">
           <div>
             <label for="nombre">Nombre completo</label>
-            <input id="nombre" placeholder="Ej. Martina López" autocomplete="off">
+            <div class="sug-caja">
+              <input id="nombre" placeholder="Ej. Martina López" autocomplete="off">
+              <ul class="sugerencias" id="sug-nombre" role="listbox" hidden></ul>
+            </div>
           </div>
           <div>
             <label for="curso">Curso</label>
@@ -59,6 +62,7 @@
     const nombre = document.getElementById('nombre');
     const curso = document.getElementById('curso');
     const CURSO_VALIDO = /^\d°\d{1,2}$/;
+    let avisoBloqueo = false; // el aviso actual es por material sin devolver
 
     // Solo números: el ° se agrega solo después del primer número (6 → 6°)
     curso.addEventListener('input', (e) => {
@@ -78,7 +82,10 @@
       fila.className = 'libro';
       fila.innerHTML = `
         <div class="num"></div>
-        <input class="titulo" placeholder="Título del material" aria-label="Título del material">
+        <div class="sug-caja">
+          <input class="titulo" placeholder="Título del material" aria-label="Título del material">
+          <ul class="sugerencias" role="listbox" hidden></ul>
+        </div>
         <div class="cant-fila">
           <span class="cant-etiq" aria-hidden="true">Cantidad</span>
           <div class="cant-caja" role="group" aria-label="Cantidad">
@@ -91,6 +98,11 @@
       fila.querySelector('.btn-quitar').onclick = () => {
         if (lista.children.length > 1) { fila.remove(); actualizar(); }
       };
+      montarSugerencias(
+        fila.querySelector('.titulo'),
+        fila.querySelector('.sugerencias'),
+        consultarTitulos,
+        estadoSug);
       const cantidad = fila.querySelector('.cantidad');
       // Si escriben a mano un valor raro, se corrige a un número entre 1 y 99
       cantidad.addEventListener('change', () => {
@@ -121,7 +133,43 @@
       });
       const llenos = [...lista.querySelectorAll('.titulo')].filter(t => t.value.trim()).length;
       document.getElementById('contador').textContent = llenos + (llenos === 1 ? ' material' : ' materiales');
-      guardar.disabled = !(nombre.value.trim() && CURSO_VALIDO.test(curso.value) && llenos > 0);
+
+      // Solo se puede pedir hasta lo disponible del catálogo; los títulos que no
+      // están en el catálogo no se pueden pedir si tienen copias sin devolver
+      const problemas = [];
+      let disp, pend;
+      try { disp = Datos.disponibilidad(); } catch { disp = new Map(); }
+      try { pend = Datos.pendientes(); } catch { pend = new Map(); }
+      const pedidos = new Map();
+      for (const f of lista.children) {
+        const titulo = f.querySelector('.titulo').value.trim();
+        if (!titulo) continue;
+        const n = Number(f.querySelector('.cantidad').value) || 1;
+        const k = titulo.toLowerCase();
+        const acum = pedidos.get(k) || { titulo, n: 0 };
+        acum.n += n;
+        pedidos.set(k, acum);
+      }
+      for (const [k, x] of pedidos) {
+        if (disp.has(k)) {
+          const quedan = disp.get(k).disponibles;
+          if (x.n > quedan) problemas.push('"' + x.titulo + '" (quedan ' + quedan + ')');
+        } else {
+          const n = pend.get(k) || 0;
+          if (n) problemas.push('"' + x.titulo + '" (' + n + ' sin devolver)');
+        }
+      }
+      if (problemas.length) {
+        mostrar('error', 'No se puede pedir: ' + problemas.join(', ') + '.');
+        avisoBloqueo = true;
+      } else if (avisoBloqueo) {
+        aviso.className = 'aviso';
+        aviso.textContent = '';
+        avisoBloqueo = false;
+      }
+
+      guardar.disabled = !(nombre.value.trim() && CURSO_VALIDO.test(curso.value) && llenos > 0) ||
+        problemas.length > 0;
     }
 
     document.addEventListener('input', actualizar);
@@ -146,6 +194,132 @@
         actualizar();
       }
     };
+
+    // ── Autocompletado: sugiere profesores y materiales de la base de datos ──
+    let contadorSug = 0;
+
+    function ordenarPorPrefijo(q, textos) {
+      const p = q.toLowerCase();
+      return [...new Set(textos)]
+        .sort((a, b) =>
+          (b.toLowerCase().startsWith(p) ? 1 : 0) - (a.toLowerCase().startsWith(p) ? 1 : 0))
+        .slice(0, 7);
+    }
+
+    function consultarNombres(q) {
+      return ordenarPorPrefijo(q, Datos.profesores.listar(q)
+        .map(p => (p.nombre + ' ' + p.apellido).trim()));
+    }
+
+    function consultarTitulos(q) {
+      const bajo = s => String(s || '').toLowerCase();
+      return ordenarPorPrefijo(q, Datos.inventario.listar(q)
+        .filter(x => bajo(x.titulo).includes(bajo(q)))
+        .map(x => String(x.titulo || '').trim()));
+    }
+
+    // Estado de un título para marcarlo en las sugerencias: sin ejemplares,
+    // cuántos quedan, o en préstamo si no está en el catálogo
+    function estadoSug(texto) {
+      const k = String(texto || '').toLowerCase().trim();
+      try {
+        const info = Datos.disponibilidad().get(k);
+        if (info) {
+          if (info.disponibles <= 0) return { texto: ' · sin ejemplares', clase: 'sug-estado' };
+          return { texto: ' · quedan ' + info.disponibles, clase: 'sug-estado quedan' };
+        }
+        const n = Datos.pendientes().get(k) || 0;
+        return n ? { texto: ' · en préstamo', clase: 'sug-estado' } : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function montarSugerencias(input, ul, consultar, estado) {
+      if (!ul.id) ul.id = 'sug-' + (++contadorSug);
+      input.setAttribute('role', 'combobox');
+      input.setAttribute('aria-autocomplete', 'list');
+      input.setAttribute('aria-controls', ul.id);
+      input.setAttribute('aria-expanded', 'false');
+
+      let items = [];
+      let activo = -1;
+      let perdida = 0; // anula la orden de ocultar si el foco vuelve al campo
+      let ultimo = ''; // último valor elegido: no debe volver a buscarlo
+
+      function ocultar() {
+        ul.hidden = true;
+        ul.replaceChildren();
+        input.setAttribute('aria-expanded', 'false');
+        input.removeAttribute('aria-activedescendant');
+        items = [];
+        activo = -1;
+      }
+
+      function marcar(i) {
+        activo = i;
+        [...ul.children].forEach((li, k) => li.classList.toggle('activo', k === i));
+        if (i >= 0) input.setAttribute('aria-activedescendant', ul.id + '-op-' + i);
+        else input.removeAttribute('aria-activedescendant');
+      }
+
+      function elegir(i) {
+        if (i < 0 || i >= items.length) return;
+        input.value = items[i];
+        ultimo = items[i];
+        ocultar();
+        // Dispara el mismo evento que teclear, para actualizar contador y botón guardar
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+
+      function pintar() {
+        ul.replaceChildren();
+        items.forEach((texto, i) => {
+          const li = document.createElement('li');
+          li.id = ul.id + '-op-' + i;
+          li.setAttribute('role', 'option');
+          li.textContent = texto;
+          if (estado) {
+            const info = estado(texto);
+            if (info) {
+              const s = document.createElement('span');
+              s.className = info.clase;
+              s.textContent = info.texto;
+              li.append(s);
+            }
+          }
+          li.addEventListener('mousedown', e => { e.preventDefault(); elegir(i); });
+          li.addEventListener('mouseenter', () => marcar(i));
+          ul.append(li);
+        });
+        ul.hidden = items.length === 0;
+        input.setAttribute('aria-expanded', String(items.length > 0));
+      }
+
+      input.addEventListener('input', () => {
+        const q = input.value.trim();
+        if (!q || input.value === ultimo) { ocultar(); return; }
+        try { items = consultar(q); } catch { items = []; }
+        activo = -1;
+        pintar();
+      });
+
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && !ul.hidden) { e.stopPropagation(); ocultar(); return; }
+        if (ul.hidden || items.length === 0) return;
+        if (e.key === 'ArrowDown') { e.preventDefault(); marcar((activo + 1) % items.length); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); marcar((activo - 1 + items.length) % items.length); }
+        else if (e.key === 'Enter' && activo >= 0) { e.preventDefault(); elegir(activo); }
+      });
+
+      input.addEventListener('focus', () => { perdida++; });
+      input.addEventListener('blur', () => {
+        const turno = ++perdida;
+        setTimeout(() => { if (turno === perdida) ocultar(); }, 130);
+      });
+    }
+
+    montarSugerencias(nombre, document.getElementById('sug-nombre'), consultarNombres);
 
     agregarFila();
   </script>
