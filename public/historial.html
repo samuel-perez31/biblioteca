@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f4d2e">
+  <title>Historial · Biblioteca escolar</title>
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <aside class="menu" id="menu"></aside>
+  <script src="menu.js"></script>
+  <script src="datos.js"></script>
+
+  <main>
+    <h1>Historial</h1>
+    <p class="sub">Todos los materiales que ya volvieron, con el detalle de cada préstamo.</p>
+
+    <div class="barra">
+      <input id="buscar" type="text" placeholder="Buscar alumno, curso o libro" aria-label="Buscar" autocomplete="off">
+      <span id="total" class="total"></span>
+    </div>
+
+    <div id="contenido" aria-live="polite"></div>
+  </main>
+
+  <script>
+    const contenido = document.getElementById('contenido');
+    const buscar = document.getElementById('buscar');
+    const total = document.getElementById('total');
+
+    // La base guarda la hora en UTC; aquí se muestra en hora local
+    function fechaLocal(s) {
+      return new Date(s.replace(' ', 'T') + 'Z')
+        .toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+    }
+
+    function el(tag, clase, texto) {
+      const e = document.createElement(tag);
+      if (clase) e.className = clase;
+      if (texto !== undefined) e.textContent = texto;
+      return e;
+    }
+
+    // data-label: en celular la tabla se muestra como tarjetas con el nombre de cada campo
+    function etiqueta(nombre, valor) {
+      const celda = el('td', '', valor);
+      celda.dataset.label = nombre;
+      return celda;
+    }
+
+    function mensaje(titulo, detalle, textoBoton, accion) {
+      contenido.replaceChildren();
+      const caja = el('div', 'vacio');
+      caja.append(el('strong', '', titulo), detalle);
+      if (textoBoton) {
+        const b = el('button', 'btn-borde', textoBoton);
+        b.type = 'button';
+        b.onclick = accion;
+        caja.append(document.createElement('br'), b);
+      }
+      contenido.append(caja);
+    }
+
+    function cargar() {
+      const q = buscar.value.trim();
+      total.textContent = '';
+      try {
+        dibujar(Datos.historial(q), q);
+      } catch {
+        mensaje('No se pudo cargar el historial',
+          'Vuelve a intentarlo.',
+          'Reintentar', cargar);
+      }
+    }
+
+    const ICONO = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+
+    function dibujar(filas, q) {
+      total.textContent = filas.length + (filas.length === 1 ? ' registro' : ' registros');
+      if (filas.length === 0) {
+        return q
+          ? mensaje('Sin resultados', 'No hay devoluciones que coincidan con "' + q + '".')
+          : mensaje('Todavía no hay devoluciones', 'Cuando marques un material como devuelto aparecerá aquí.');
+      }
+
+      const tabla = el('table', 'historial');
+      const encabezado = el('thead');
+      const cab = el('tr');
+      for (const t of ['Libro y estudiante', 'Curso', 'Salió', 'Regresó']) cab.append(el('th', '', t));
+      encabezado.append(cab);
+      tabla.append(encabezado);
+
+      const cuerpo = el('tbody');
+      for (const f of filas) {
+        const fila = el('tr');
+
+        const celda = el('td');
+        celda.dataset.label = 'Libro y estudiante';
+        const item = el('div', 'item');
+        const icono = el('span', 'icono-libro');
+        icono.innerHTML = ICONO;
+        const textos = el('div');
+        const titulo = f.material + (f.cantidad > 1 ? ' × ' + f.cantidad : '');
+        textos.append(el('strong', '', titulo), el('span', 'quien', f.nombre));
+        item.append(icono, textos);
+        celda.append(item);
+
+        fila.append(celda,
+          etiqueta('Curso', f.curso),
+          etiqueta('Salió', fechaLocal(f.salio)),
+          etiqueta('Regresó', fechaLocal(f.regreso)));
+        cuerpo.append(fila);
+      }
+      tabla.append(cuerpo);
+
+      const caja = el('div', 'tabla-caja');
+      caja.append(tabla);
+      contenido.replaceChildren(caja);
+    }
+
+    let espera;
+    buscar.addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(cargar, 250); });
+    cargar();
+  </script>
+</body>
+</html>

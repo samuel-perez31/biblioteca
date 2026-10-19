@@ -1,0 +1,5 @@
+# Dependencias de Node (se reinstalan con npm install)
+node_modules/
+
+# Registros temporales
+*.log

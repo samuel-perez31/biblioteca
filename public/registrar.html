@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f4d2e">
+  <title>Registrar préstamo · Biblioteca escolar</title>
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <aside class="menu" id="menu"></aside>
+  <script src="menu.js"></script>
+  <script src="datos.js"></script>
+
+  <main>
+    <h1>Registrar préstamo</h1>
+    <p class="sub">Anota quién se lleva el material. La fecha y la hora se guardan solas.</p>
+
+    <div class="layout">
+      <section class="tarjeta">
+        <div id="aviso" class="aviso" role="alert"></div>
+
+        <div class="fila">
+          <div>
+            <label for="nombre">Nombre completo</label>
+            <input id="nombre" placeholder="Ej. Martina López" autocomplete="off">
+          </div>
+          <div>
+            <label for="curso">Curso</label>
+            <input id="curso" placeholder="Ej. 6°2" autocomplete="off" maxlength="4" inputmode="numeric">
+          </div>
+        </div>
+
+        <div class="cabecera-libros">
+          <label>Material que se lleva</label>
+          <span id="contador">0 materiales</span>
+        </div>
+        <div id="lista"></div>
+        <button type="button" class="btn-borde" id="agregar">+ Añadir otro material</button>
+
+        <div class="acciones">
+          <button type="button" class="btn-verde" id="guardar" disabled>Guardar préstamo</button>
+        </div>
+      </section>
+
+      <aside>
+        <div class="nota">
+          <h2>Una nota útil</h2>
+          No hace falta buscar el material en un catálogo. Escribe el título tal como aparece en el ejemplar y la cantidad.
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const lista = document.getElementById('lista');
+    const aviso = document.getElementById('aviso');
+    const guardar = document.getElementById('guardar');
+    const nombre = document.getElementById('nombre');
+    const curso = document.getElementById('curso');
+    const CURSO_VALIDO = /^\d°\d{1,2}$/;
+
+    // Solo números: el ° se agrega solo después del primer número (6 → 6°)
+    curso.addEventListener('input', (e) => {
+      const borrando = e.inputType && e.inputType.startsWith('delete');
+      if (borrando && !curso.value.includes('°')) { curso.value = ''; return; }
+      const d = curso.value.replace(/\D/g, '');
+      curso.value = d ? d[0] + '°' + d.slice(1, 3) : '';
+    });
+
+    function mostrar(tipo, texto) {
+      aviso.className = 'aviso ' + tipo;
+      aviso.textContent = texto;
+    }
+
+    function agregarFila() {
+      const fila = document.createElement('div');
+      fila.className = 'libro';
+      fila.innerHTML = `
+        <div class="num"></div>
+        <input class="titulo" placeholder="Título del material" aria-label="Título del material">
+        <div class="cant-fila">
+          <span class="cant-etiq" aria-hidden="true">Cantidad</span>
+          <div class="cant-caja" role="group" aria-label="Cantidad">
+            <button type="button" class="paso bajar" aria-label="Disminuir cantidad">&minus;</button>
+            <input class="cantidad" type="number" min="1" max="99" value="1" inputmode="numeric" aria-label="Cantidad">
+            <button type="button" class="paso subir" aria-label="Aumentar cantidad">+</button>
+          </div>
+        </div>
+        <button type="button" class="btn-quitar" aria-label="Quitar material">×</button>`;
+      fila.querySelector('.btn-quitar').onclick = () => {
+        if (lista.children.length > 1) { fila.remove(); actualizar(); }
+      };
+      const cantidad = fila.querySelector('.cantidad');
+      // Si escriben a mano un valor raro, se corrige a un número entre 1 y 99
+      cantidad.addEventListener('change', () => {
+        cantidad.value = Math.min(99, Math.max(1, Math.round(Number(cantidad.value) || 1)));
+        actualizar();
+      });
+      fila.querySelector('.subir').onclick = () => moverCantidad(cantidad, 1);
+      fila.querySelector('.bajar').onclick = () => moverCantidad(cantidad, -1);
+      lista.appendChild(fila);
+      actualizar();
+    }
+
+    // Sube o baja la cantidad con los botones − y +; va de 1 a 99
+    function moverCantidad(cantidad, delta) {
+      const v = Math.min(99, Math.max(1, (Number(cantidad.value) || 1) + delta));
+      if (String(v) === cantidad.value) return;
+      cantidad.value = v;
+      cantidad.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function actualizar() {
+      [...lista.children].forEach((f, i) => {
+        f.querySelector('.num').textContent = i + 1;
+        // El botón − se apaga en 1 y el + se apaga en 99
+        const cant = Number(f.querySelector('.cantidad').value) || 1;
+        f.querySelector('.bajar').disabled = cant <= 1;
+        f.querySelector('.subir').disabled = cant >= 99;
+      });
+      const llenos = [...lista.querySelectorAll('.titulo')].filter(t => t.value.trim()).length;
+      document.getElementById('contador').textContent = llenos + (llenos === 1 ? ' material' : ' materiales');
+      guardar.disabled = !(nombre.value.trim() && CURSO_VALIDO.test(curso.value) && llenos > 0);
+    }
+
+    document.addEventListener('input', actualizar);
+    document.getElementById('agregar').onclick = agregarFila;
+
+    guardar.onclick = async () => {
+      const materiales = [...lista.children]
+        .map(f => ({
+          material: f.querySelector('.titulo').value.trim(),
+          cantidad: Number(f.querySelector('.cantidad').value) || 1
+        }))
+        .filter(m => m.material);
+
+      guardar.disabled = true;
+      try {
+        Datos.registrar({ nombre: nombre.value, curso: curso.value, materiales });
+        mostrar('ok', 'Préstamo guardado. Puedes registrar otro.');
+        nombre.value = ''; curso.value = ''; lista.innerHTML = '';
+        agregarFila();
+      } catch (e) {
+        mostrar('error', 'No se pudo guardar: ' + e.message + '. Revisa los datos e inténtalo de nuevo.');
+        actualizar();
+      }
+    };
+
+    agregarFila();
+  </script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f4d2e">
+  <title>Préstamos activos · Biblioteca escolar</title>
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <aside class="menu" id="menu"></aside>
+  <script src="menu.js"></script>
+  <script src="datos.js"></script>
+
+  <main>
+    <div class="encabezado">
+      <div>
+        <h1>Préstamos activos</h1>
+        <p class="sub">Busca un alumno o un libro y registra cada devolución por separado.</p>
+      </div>
+      <a href="registrar.html" class="btn-verde">+ Nuevo préstamo</a>
+    </div>
+
+    <div class="barra">
+      <input id="buscar" type="text" placeholder="Buscar alumno, curso o libro" aria-label="Buscar" autocomplete="off">
+      <span id="total" class="total"></span>
+    </div>
+
+    <div id="lista" aria-live="polite"></div>
+  </main>
+
+  <script>
+    const lista = document.getElementById('lista');
+    const buscar = document.getElementById('buscar');
+    const total = document.getElementById('total');
+    const CLASES = { 'En préstamo': 'en-prestamo', 'Pendiente': 'pendiente', 'Atrasado': 'atrasado' };
+
+    // La base guarda la hora en UTC; aquí se muestra en hora local
+    function fechaLocal(s) {
+      return new Date(s.replace(' ', 'T') + 'Z')
+        .toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+    }
+
+    function el(tag, clase, texto) {
+      const e = document.createElement(tag);
+      if (clase) e.className = clase;
+      if (texto !== undefined) e.textContent = texto;
+      return e;
+    }
+
+    function mensaje(titulo, detalle, textoBoton, accion) {
+      lista.replaceChildren();
+      const caja = el('div', 'vacio');
+      caja.append(el('strong', '', titulo), detalle);
+      if (textoBoton) {
+        const b = el('button', 'btn-borde', textoBoton);
+        b.type = 'button';
+        b.onclick = accion;
+        caja.append(document.createElement('br'), b);
+      }
+      lista.append(caja);
+    }
+
+    function cargar() {
+      const q = buscar.value.trim();
+      total.textContent = '';
+      try {
+        dibujar(Datos.activos(q), q);
+      } catch {
+        mensaje('No se pudieron cargar los préstamos',
+          'Vuelve a intentarlo.',
+          'Reintentar', cargar);
+      }
+    }
+
+    function dibujar(grupos, q) {
+      total.textContent = grupos.length + (grupos.length === 1 ? ' préstamo encontrado' : ' préstamos encontrados');
+      if (grupos.length === 0) {
+        return q
+          ? mensaje('Sin resultados', 'No hay préstamos activos que coincidan con "' + q + '".')
+          : mensaje('No hay préstamos activos', 'Cuando registres un préstamo aparecerá aquí.');
+      }
+      lista.replaceChildren();
+      for (const g of grupos) {
+        const caja = el('section', 'grupo');
+        const cab = el('div', 'grupo-cab');
+        const quien = el('div');
+        quien.append(el('strong', '', g.nombre), el('span', '', g.curso + ' · ' + fechaLocal(g.fecha_hora)));
+        const n = g.materiales.length;
+        cab.append(quien, el('span', '', n + (n === 1 ? ' material pendiente' : ' materiales pendientes')));
+        caja.append(cab);
+
+        for (const m of g.materiales) {
+          const fila = el('div', 'grupo-fila');
+          const info = el('div');
+          const t = el('div', 'titulo-mat', m.material);
+          if (m.cantidad > 1) t.append(el('span', 'cant', '× ' + m.cantidad));
+          info.append(t, el('span', 'badge ' + CLASES[m.estado], m.estado));
+          const b = el('button', 'btn-devolver', 'Marcar devuelto');
+          b.type = 'button';
+          b.onclick = () => devolver(m.id_detalle, b);
+          fila.append(info, b);
+          caja.append(fila);
+        }
+        lista.append(caja);
+      }
+    }
+
+    function devolver(id, boton) {
+      boton.disabled = true;
+      boton.textContent = 'Guardando…';
+      try {
+        Datos.devolver(id);
+        cargar();
+      } catch (e) {
+        boton.disabled = false;
+        boton.textContent = 'Marcar devuelto';
+        alert('No se pudo registrar la devolución: ' + e.message);
+      }
+    }
+
+    let espera;
+    buscar.addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(cargar, 250); });
+    cargar();
+  </script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f4d2e">
+  <title>Resumen · Biblioteca escolar</title>
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <aside class="menu" id="menu"></aside>
+  <script src="menu.js"></script>
+  <script src="datos.js"></script>
+
+  <main>
+    <div class="encabezado">
+      <div>
+        <h1 id="titulo">Todo en su sitio.</h1>
+        <p class="sub">Una vista tranquila para saber qué salió, qué volvió y qué necesita atención.</p>
+      </div>
+    </div>
+
+    <div id="error" class="vacio" hidden>
+      <strong>No se pudo cargar el resumen</strong>
+      Vuelve a intentarlo.<br>
+      <button type="button" class="btn-borde" id="reintentar">Reintentar</button>
+    </div>
+
+    <div id="alerta" class="alerta" hidden>
+      <span id="alerta-texto"></span>
+      <a href="activos.html">Ver préstamos activos</a>
+    </div>
+
+    <div class="tarjetas">
+      <article class="dato">
+        <div class="nombre">En préstamo</div>
+        <div class="numero" id="n-prestamo">…</div>
+        <div class="detalle">salieron hace menos de 1 día</div>
+      </article>
+      <article class="dato pendiente">
+        <div class="nombre">Pendiente</div>
+        <div class="numero" id="n-pendiente">…</div>
+        <div class="detalle">entre 1 y 7 días fuera</div>
+      </article>
+      <article class="dato atrasado" id="tarjeta-atrasado">
+        <div class="nombre">Atrasado</div>
+        <div class="numero" id="n-atrasado">…</div>
+        <div class="detalle">más de 8 días, requieren seguimiento</div>
+      </article>
+      <article class="dato devuelto">
+        <div class="nombre">Devuelto</div>
+        <div class="numero" id="n-devuelto">…</div>
+        <div class="detalle">ya volvieron a la biblioteca</div>
+      </article>
+    </div>
+
+    <section class="banner">
+      <h2>¿Qué necesitas anotar?</h2>
+      <p>Registra una salida en menos de un minuto o ponte al día con los materiales que han regresado.</p>
+      <div class="botones">
+        <a href="registrar.html" class="rojo">Registrar préstamo</a>
+        <a href="activos.html" class="claro">Ver préstamos</a>
+        <a href="historial.html" class="claro">Historial</a>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const numeros = { enPrestamo: 'n-prestamo', pendiente: 'n-pendiente', atrasado: 'n-atrasado', devuelto: 'n-devuelto' };
+
+
+    function pintar(d) {
+      for (const clave in numeros) $(numeros[clave]).textContent = d[clave];
+      $('tarjeta-atrasado').classList.toggle('hay', d.atrasado > 0);
+
+      const hay = d.atrasado > 0;
+      const texto = d.atrasado + (d.atrasado === 1 ? ' material atrasado' : ' materiales atrasados');
+      $('titulo').textContent = hay ? 'Hay ' + texto + '.' : 'Todo en su sitio.';
+      $('alerta').hidden = !hay;
+      $('alerta-texto').textContent = hay ? 'Atención: ' + texto + ' por devolver.' : '';
+    }
+
+    function cargar() {
+      try {
+        pintar(Datos.resumen());
+        $('error').hidden = true;
+      } catch {
+        for (const clave in numeros) $(numeros[clave]).textContent = '–';
+        $('error').hidden = false;
+      }
+    }
+
+    $('reintentar').onclick = cargar;
+    // Se actualiza al volver a la pestaña y cada minuto, porque los estados cambian con el tiempo
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) cargar(); });
+    setInterval(cargar, 60000);
+    cargar();
+  </script>
+</body>
+</html>
